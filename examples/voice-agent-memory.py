@@ -34,7 +34,6 @@ import os
 
 from dotenv import load_dotenv
 from loguru import logger
-
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -75,7 +74,7 @@ async def initial_greeting(memory: MnemoverseMemoryService) -> str:
 
 
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
-    """Set up and run the pipeline with Mnemoverse memory between the user aggregator and the LLM."""
+    """Run the pipeline with Mnemoverse memory between the user aggregator and the LLM."""
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
     tts = ElevenLabsTTSService(
         api_key=os.environ["ELEVENLABS_API_KEY"],

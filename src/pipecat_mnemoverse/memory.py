@@ -17,8 +17,6 @@ import asyncio
 from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel, Field
-
 from pipecat.frames.frames import Frame, LLMContextFrame
 from pipecat.processors.aggregators.llm_context import (
     LLMContext,
@@ -26,6 +24,7 @@ from pipecat.processors.aggregators.llm_context import (
     LLMStandardMessage,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pydantic import BaseModel, Field
 
 try:
     from mnemoverse import AsyncMnemoClient
@@ -36,6 +35,12 @@ except ModuleNotFoundError as e:
         "Also, set the environment variable MNEMOVERSE_API_KEY."
     )
     raise ImportError(f"Missing module: {e}") from e
+
+# API limits (https://mnemoverse.com/docs/api/reference): a read query of 1-5,000
+# characters, a memory of 1-10,000 characters, a domain of up to 100 characters.
+MAX_QUERY = 5000
+MAX_CONTENT = 10000
+MAX_DOMAIN = 100
 
 
 class MnemoverseMemoryService(FrameProcessor):
@@ -95,9 +100,12 @@ class MnemoverseMemoryService(FrameProcessor):
                 ``user_id``.
             params: Recall, storage and placement settings.
             client: An ``AsyncMnemoClient`` to use instead of creating one.
+                The caller keeps ownership and closes it; the service closes
+                only a client it created itself.
 
         Raises:
-            ValueError: If neither ``user_id`` nor ``domain`` is given.
+            ValueError: If neither ``user_id`` nor ``domain`` is given, or the
+                domain is longer than 100 characters.
         """
         super().__init__()
 
@@ -105,11 +113,14 @@ class MnemoverseMemoryService(FrameProcessor):
             if not user_id:
                 raise ValueError("Provide user_id or domain")
             domain = f"user:{user_id}"
+        if len(domain) > MAX_DOMAIN:
+            raise ValueError(f"The Mnemoverse domain must be at most {MAX_DOMAIN} characters")
 
         params = params or MnemoverseMemoryService.InputParams()
 
         self.domain = domain
-        self.client = client or AsyncMnemoClient(api_key=api_key)
+        self._owns_client = client is None
+        self.client = client if client is not None else AsyncMnemoClient(api_key=api_key)
         self.top_k = params.top_k
         self.min_relevance = params.min_relevance
         self.read_timeout_secs = params.read_timeout_secs
@@ -137,7 +148,7 @@ class MnemoverseMemoryService(FrameProcessor):
         try:
             feed = await self.client.recent(domain=self.domain, limit=limit)
             return [item.content for item in feed.items]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - memory must never break a call
             logger.error(f"Error listing memories from Mnemoverse: {e}")
             return []
 
@@ -153,7 +164,7 @@ class MnemoverseMemoryService(FrameProcessor):
         try:
             result = await asyncio.wait_for(
                 self.client.read(
-                    query,
+                    query[-MAX_QUERY:],
                     top_k=self.top_k,
                     domain=self.domain,
                     min_relevance=self.min_relevance,
@@ -163,12 +174,13 @@ class MnemoverseMemoryService(FrameProcessor):
             memories = [item.content for item in result.items if item.content]
             logger.debug(f"Recalled {len(memories)} memories from Mnemoverse")
             return memories
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
-                f"Mnemoverse recall took longer than {self.read_timeout_secs}s; continuing without memories"
+                f"Mnemoverse recall took longer than {self.read_timeout_secs}s; "
+                "continuing without memories"
             )
             return []
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the frame moves on without memories
             logger.error(f"Error recalling memories from Mnemoverse: {e}")
             return []
 
@@ -179,13 +191,18 @@ class MnemoverseMemoryService(FrameProcessor):
             messages: (role, content) pairs that have not been saved yet.
         """
         for role, content in messages:
+            if len(content) > MAX_CONTENT:
+                logger.warning(
+                    f"A {role} message of {len(content)} characters is longer than a "
+                    f"Mnemoverse memory holds; saving the first {MAX_CONTENT}"
+                )
             try:
                 await self.client.write(
-                    content,
+                    content[:MAX_CONTENT],
                     domain=self.domain,
                     metadata={"platform": "pipecat", "role": role},
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - a failed save must not stop the others
                 logger.error(f"Error saving a message to Mnemoverse: {e}")
 
     def _new_messages(self, context_messages: list) -> list[tuple[str, str]]:
@@ -278,18 +295,24 @@ class MnemoverseMemoryService(FrameProcessor):
                         self.create_task(self._store_messages(to_store), name="mnemoverse_store")
 
                 await self.push_frame(frame, direction)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - report it and let the frame through
                 await self.push_error(
-                    error_msg=f"Error processing with Mnemoverse: {str(e)}", exception=e
+                    error_msg=f"Error processing with Mnemoverse: {e!s}", exception=e
                 )
                 await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
 
     async def cleanup(self):
-        """Close the Mnemoverse client when the pipeline shuts down."""
+        """Close the Mnemoverse client when the pipeline shuts down.
+
+        Only a client the service created itself is closed; one passed in as
+        ``client`` stays open for its owner.
+        """
         await super().cleanup()
+        if not self._owns_client:
+            return
         try:
             await self.client.close()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - shutdown goes on regardless
             logger.debug(f"Error closing the Mnemoverse client: {e}")
