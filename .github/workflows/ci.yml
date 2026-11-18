@@ -1,0 +1,62 @@
+name: ci
+
+# The same gate release.yml runs before it builds: ruff, strict mypy and the
+# test suite, on every Python version pyproject.toml declares, plus one run
+# against the lowest versions the dependency ranges allow.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+        deps: ["latest"]
+        include:
+          # The floor of every range in pyproject.toml that this package calls.
+          - python-version: "3.11"
+            deps: "lowest"
+    name: test (${{ matrix.python-version }}, ${{ matrix.deps }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Pin the lowest supported versions
+        if: matrix.deps == 'lowest'
+        run: pip install "pipecat-ai==1.15.0" "mnemoverse==0.5.2"
+
+      - name: Installed versions
+        run: pip show pipecat-ai mnemoverse | grep -E '^(Name|Version):'
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Typecheck
+        run: mypy
+
+      - name: Test
+        run: python -m pytest -q
