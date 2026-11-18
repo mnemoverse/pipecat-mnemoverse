@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
 name = "pipecat-mnemoverse"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Mnemoverse memory for Pipecat agents: recall what a user said in earlier sessions and save what they say now"
 readme = "README.md"
 license = "BSD-2-Clause"
@@ -12,21 +12,53 @@ license-files = ["LICENSE"]
 authors = [{ name = "Mnemoverse" }]
 requires-python = ">=3.11"
 dependencies = [
-    "pipecat-ai>=1.15.0",
-    "mnemoverse>=0.5.2",
+    "pipecat-ai>=1.15.0,<2",
+    "mnemoverse>=0.5.2,<0.6.0",
 ]
 keywords = ["pipecat", "voice agents", "memory", "mnemoverse"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 
 [project.urls]
 Homepage = "https://mnemoverse.com"
 Documentation = "https://mnemoverse.com/docs/api/python-sdk"
 Repository = "https://github.com/mnemoverse/pipecat-mnemoverse"
+Issues = "https://github.com/mnemoverse/pipecat-mnemoverse/issues"
+Changelog = "https://github.com/mnemoverse/pipecat-mnemoverse/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.8", "mypy>=1.13"]
+
+[tool.hatch.version]
+path = "src/pipecat_mnemoverse/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pipecat_mnemoverse"]
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "BLE", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pipecat_mnemoverse"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
