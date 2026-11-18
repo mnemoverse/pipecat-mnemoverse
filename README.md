@@ -2,7 +2,7 @@
 
 Memory for [Pipecat](https://github.com/pipecat-ai/pipecat) agents with [Mnemoverse](https://mnemoverse.com). Before each reply the agent recalls what the user said in earlier sessions; what the user says now is saved for the next one. Memories live in your Mnemoverse account, so the same memory is readable from any other tool connected to it, such as Claude, ChatGPT, Cursor or VS Code.
 
-This integration is maintained by Mnemoverse, the company behind the Mnemoverse memory service.
+This integration is maintained by the Mnemoverse team, who run the Mnemoverse memory service.
 
 ## Installation
 
@@ -77,7 +77,9 @@ Each new user message costs two requests: one recall before the reply and one wr
 
 `get_memories(limit=10)` returns the newest memories of the domain, for example to build a greeting when a call connects.
 
-One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server.
+One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server. How Mnemoverse handles keys and data: [mnemoverse.com/docs/api/security](https://mnemoverse.com/docs/api/security).
+
+Pass your own `AsyncMnemoClient` as `client=` to share one connection pool between services; the service then leaves it open when the pipeline ends, and closing it is yours. A recall query longer than the API's 5,000 characters is cut to its last 5,000, and a message longer than 10,000 characters is saved as its first 10,000.
 
 ## Example
 
@@ -92,7 +94,11 @@ Open the local URL it prints, tell the agent something about yourself, end the c
 
 ## Compatibility
 
-Tested with Pipecat v1.15.0 and the `mnemoverse` Python SDK 0.5.2, on Python 3.11 and later. It needs SDK 0.5.2 or later: in 0.5.0 and 0.5.1 a refused request during the first call could leave the client switched off until restart.
+Tested with the `mnemoverse` Python SDK 0.5.2 and Pipecat v1.16.0 on Python 3.11, 3.12 and 3.13, and with Pipecat v1.15.0 on Python 3.11. It needs SDK 0.5.2 or later: in earlier versions a recall cut off by `read_timeout_secs`, or refused with a client error such as 401, 403 or a quota 429, while the client was probing the service after an outage could leave that client refusing every call until the process restarted.
+
+## Issues
+
+[github.com/mnemoverse/pipecat-mnemoverse/issues](https://github.com/mnemoverse/pipecat-mnemoverse/issues/new)
 
 ## License
 
