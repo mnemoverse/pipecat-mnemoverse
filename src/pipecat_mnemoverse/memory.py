@@ -171,7 +171,9 @@ class MnemoverseMemoryService(FrameProcessor):
                 ),
                 timeout=self.read_timeout_secs,
             )
-            memories = [item.content for item in result.items if item.content]
+            # top_k is not a hard cap on the server (association expansion can
+            # return more), so the context never gets more than top_k memories.
+            memories = [item.content for item in result.items if item.content][: self.top_k]
             logger.debug(f"Recalled {len(memories)} memories from Mnemoverse")
             return memories
         except TimeoutError:

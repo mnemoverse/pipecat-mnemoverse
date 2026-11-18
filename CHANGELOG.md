@@ -12,3 +12,4 @@ All notable changes to `pipecat-mnemoverse`.
 - README: requests per user message against the plan's daily limit, and when to lower `min_relevance`.
 - Requires `mnemoverse>=0.5.2,<0.6.0` and `pipecat-ai>=1.15.0,<2`.
 - A client passed in as `client=` stays open when the pipeline ends; recall queries and saved messages are kept within the API's character limits; a domain over 100 characters is refused.
+- At most `top_k` memories reach the context, also when the server returns more.

@@ -138,6 +138,10 @@ class TestRecall(unittest.IsolatedAsyncioTestCase):
         await svc._enhance_context_with_memories(ctx, "hello")
         self.assertEqual(ctx.get_messages(), [{"role": "user", "content": "hello"}])
 
+    async def test_no_more_than_top_k_memories_reach_the_context(self):
+        svc = _service(_FakeClient(["a", "b", "c", "d"]), top_k=2)
+        self.assertEqual(await svc._retrieve_memories("hello"), ["a", "b"])
+
     async def test_long_query_is_cut_to_the_api_limit(self):
         client = _FakeClient()
         svc = _service(client)
