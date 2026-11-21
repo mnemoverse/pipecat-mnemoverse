@@ -2,7 +2,7 @@
 
 All notable changes to `pipecat-mnemoverse`.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-21
 
 ### Added
 
