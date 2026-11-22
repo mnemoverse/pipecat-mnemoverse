@@ -47,6 +47,19 @@ MAX_DOMAIN = 100
 SAVE_DRAIN_SECS = 5.0
 
 
+# "<" and ">" become the single guillemets U+2039 and U+203A, as in langchain-mnemoverse.
+_ANGLE_BRACKETS = str.maketrans({"<": chr(0x2039), ">": chr(0x203A)})
+
+
+def _one_line(text: str) -> str:
+    """Memory text as the LLM sees it: one line, angle brackets replaced.
+
+    Memory text is written by other people and tools. Kept on one line, it
+    cannot start a line of its own that reads as another numbered memory.
+    """
+    return " ".join(text.split()).translate(_ANGLE_BRACKETS)
+
+
 def _reason(e: BaseException) -> str:
     """Name an exception for the log, also when its message is empty."""
     text = str(e)
@@ -189,7 +202,8 @@ class MnemoverseMemoryService(FrameProcessor):
             )
             # top_k is not a hard cap on the server (association expansion can
             # return more), so the context never gets more than top_k memories.
-            memories = [item.content for item in result.items if item.content][: self.top_k]
+            memories = [m for m in (_one_line(i.content or "") for i in result.items) if m]
+            memories = memories[: self.top_k]
             logger.debug(f"Recalled {len(memories)} memories from Mnemoverse")
             return memories
         except TimeoutError:

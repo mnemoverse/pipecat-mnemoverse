@@ -51,7 +51,7 @@ pipeline = Pipeline(
 On every LLM context frame the service:
 
 1. takes the latest user message and recalls up to `top_k` memories from the domain;
-2. puts them into the context as one message (a "developer" message at position 1 by default), replacing the one it added for the previous user message;
+2. puts them into the context as one message (a "developer" message at position 1 by default), one numbered line per memory with its line breaks collapsed and `<` `>` replaced by `‹` `›`, replacing the one it added for the previous user message;
 3. saves the new messages of the configured roles in the background, each message once.
 
 Recall sits on the path to the LLM, so it waits at most `read_timeout_secs` (1 second by default) and the frame moves on without memories if recall takes longer or fails.
