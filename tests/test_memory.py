@@ -8,9 +8,12 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 
+from loguru import logger
+from pipecat.frames.frames import LLMContextFrame
 from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.tests.utils import run_test
 
-from pipecat_mnemoverse import MnemoverseMemoryService
+from pipecat_mnemoverse import MnemoverseMemoryService, memory
 
 
 class _FakeClient:
@@ -213,6 +216,89 @@ class TestStore(unittest.IsolatedAsyncioTestCase):
         svc = _service(client)
         await svc._store_messages([("user", "x" * 10000 + "y" * 50)])
         self.assertEqual(client.writes[0][0], "x" * 10000)
+
+
+class _SlowWriteClient(_FakeClient):
+    """Records what happened, in order: each finished or cancelled write, and close."""
+
+    def __init__(self, write_delay, error=None):
+        super().__init__()
+        self.write_delay = write_delay
+        self.error = error
+        self.events = []
+
+    async def write(self, content, **kwargs):
+        try:
+            await asyncio.sleep(self.write_delay)
+        except asyncio.CancelledError:
+            self.events.append(f"cancelled {content}")
+            raise
+        if self.error is not None:
+            raise self.error
+        self.events.append(f"wrote {content}")
+        return SimpleNamespace(stored=True)
+
+    async def close(self):
+        self.events.append("closed")
+
+
+class TestShutdown(unittest.IsolatedAsyncioTestCase):
+    """The background saves when the pipeline ends, in a real Pipecat pipeline."""
+
+    async def asyncSetUp(self):
+        self.log = []
+        self.sink = logger.add(
+            lambda m: self.log.append((m.record["level"].name, m.record["message"])),
+            level="DEBUG",
+        )
+
+    async def asyncTearDown(self):
+        logger.remove(self.sink)
+
+    async def _one_turn(self, svc, *said):
+        ctx = LLMContext(messages=[{"role": "user", "content": s} for s in said])
+        await run_test(
+            svc,
+            frames_to_send=[LLMContextFrame(context=ctx)],
+            expected_down_frames=[LLMContextFrame],
+        )
+
+    def _owning(self, client, **params):
+        svc = MnemoverseMemoryService(
+            user_id="u1",
+            api_key="mk_live_test",
+            params=MnemoverseMemoryService.InputParams(**params),
+        )
+        svc.client = client
+        return svc
+
+    async def test_the_last_save_finishes_before_its_own_client_is_closed(self):
+        client = _SlowWriteClient(write_delay=0.3)
+        await self._one_turn(self._owning(client), "Call me Ana", "I live in Porto")
+        self.assertEqual(client.events, ["wrote Call me Ana", "wrote I live in Porto", "closed"])
+
+    async def test_a_client_passed_in_stays_open_after_the_saves_finish(self):
+        client = _SlowWriteClient(write_delay=0.3)
+        await self._one_turn(_service(client), "Call me Ana")
+        self.assertEqual(client.events, ["wrote Call me Ana"])
+
+    async def test_a_save_past_the_drain_time_is_cancelled_with_a_warning(self):
+        client = _SlowWriteClient(write_delay=30)
+        saved = memory.SAVE_DRAIN_SECS
+        memory.SAVE_DRAIN_SECS = 0.1
+        try:
+            await self._one_turn(self._owning(client), "Call me Ana")
+        finally:
+            memory.SAVE_DRAIN_SECS = saved
+        self.assertEqual(client.events, ["cancelled Call me Ana", "closed"])
+        warnings = [m for level, m in self.log if level == "WARNING" and "Mnemoverse save" in m]
+        self.assertEqual(len(warnings), 1)
+
+    async def test_a_failed_save_is_logged_with_its_type(self):
+        client = _SlowWriteClient(write_delay=0, error=ConnectionError(""))
+        await self._one_turn(_service(client), "Call me Ana")
+        errors = [m for level, m in self.log if level == "ERROR"]
+        self.assertEqual(errors, ["Error saving a message to Mnemoverse: ConnectionError"])
 
 
 if __name__ == "__main__":

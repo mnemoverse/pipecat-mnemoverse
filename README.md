@@ -56,6 +56,8 @@ On every LLM context frame the service:
 
 Recall sits on the path to the LLM, so it waits at most `read_timeout_secs` (1 second by default) and the frame moves on without memories if recall takes longer or fails.
 
+When the pipeline ends, the service gives the saves still running up to 5 seconds to finish before it closes its client; a save still running after that is cancelled and logged as a warning.
+
 Each new user message costs two requests: one recall before the reply and one write after it. With `"assistant"` in `store_roles`, each reply adds one more write. Reads and writes count together against your plan's daily query limit: the Free plan's 1,000 queries a day is about 500 user messages. Plans and limits are on [mnemoverse.com/pricing](https://mnemoverse.com/pricing).
 
 ### Parameters
