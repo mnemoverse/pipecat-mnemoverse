@@ -51,10 +51,12 @@ pipeline = Pipeline(
 On every LLM context frame the service:
 
 1. takes the latest user message and recalls up to `top_k` memories from the domain;
-2. puts them into the context as one message (a "developer" message at position 1 by default), replacing the one it added for the previous user message;
+2. puts them into the context as one message (a "developer" message at position 1 by default), one numbered line per memory with its line breaks collapsed and `<` `>` replaced by `‹` `›`, replacing the one it added for the previous user message;
 3. saves the new messages of the configured roles in the background, each message once.
 
 Recall sits on the path to the LLM, so it waits at most `read_timeout_secs` (1 second by default) and the frame moves on without memories if recall takes longer or fails.
+
+When the pipeline ends, the service gives the saves still running up to 5 seconds to finish before it closes its client; a save still running after that is cancelled and logged as a warning.
 
 Each new user message costs two requests: one recall before the reply and one write after it. With `"assistant"` in `store_roles`, each reply adds one more write. Reads and writes count together against your plan's daily query limit: the Free plan's 1,000 queries a day is about 500 user messages. Plans and limits are on [mnemoverse.com/pricing](https://mnemoverse.com/pricing).
 
@@ -64,11 +66,11 @@ Each new user message costs two requests: one recall before the reply and one wr
 |---|---|---|
 | `api_key` | `MNEMOVERSE_API_KEY` | Mnemoverse API key |
 | `user_id` | | The person the agent talks to; memories go to the domain `user:<user_id>` |
-| `domain` | | A Mnemoverse domain to use instead, for example `project:support` |
+| `domain` | | A Mnemoverse domain to use instead, for example `project:support`; the service saves messages to it as well as recalling from it |
 | `InputParams.top_k` | 5 | Memories to recall per user message |
 | `InputParams.min_relevance` | 0.3 | Minimum relevance of a recalled memory, 0 to 1 |
 | `InputParams.read_timeout_secs` | 1.0 | Longest wait for recall |
-| `InputParams.store_roles` | `("user",)` | Roles to save; add `"assistant"` to save the agent's replies |
+| `InputParams.store_roles` | `("user",)` | Roles to save; add `"assistant"` to save the agent's replies, or set `()` to save nothing |
 | `InputParams.system_prompt` | `"Relevant memories from earlier conversations:\n\n"` | Opening of the memory message |
 | `InputParams.add_as_system_message` | `True` | Insert memories as a "developer" message instead of a user message |
 | `InputParams.position` | 1 | Where in the context the memory message goes |
@@ -77,16 +79,16 @@ Each new user message costs two requests: one recall before the reply and one wr
 
 `get_memories(limit=10)` returns the newest memories of the domain, for example to build a greeting when a call connects.
 
-One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server. How Mnemoverse handles keys and data: [mnemoverse.com/docs/api/security](https://mnemoverse.com/docs/api/security).
+One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server. The service saves the caller's messages to the same domain it recalls from: in a domain shared by several callers, such as `project:support`, one caller's words are recalled into other callers' conversations. To give callers shared knowledge they only read, set `store_roles=()`, which saves nothing. How Mnemoverse handles keys and data: [mnemoverse.com/docs/api/security](https://mnemoverse.com/docs/api/security).
 
 Pass your own `AsyncMnemoClient` as `client=` to share one connection pool between services; the service then leaves it open when the pipeline ends, and closing it is yours. A recall query longer than the API's 5,000 characters is cut to its last 5,000, and a message longer than 10,000 characters is saved as its first 10,000.
 
 ## Example
 
-[`examples/voice-agent-memory.py`](examples/voice-agent-memory.py) is a voice agent that greets a returning caller with what it remembers. It needs `MNEMOVERSE_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY`:
+[`examples/voice-agent-memory.py`](https://github.com/mnemoverse/pipecat-mnemoverse/blob/main/examples/voice-agent-memory.py) is a voice agent that greets a returning caller with what it remembers. It needs `MNEMOVERSE_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY`:
 
 ```bash
-pip install "pipecat-ai[deepgram,elevenlabs,openai,silero,webrtc]" pipecat-mnemoverse python-dotenv
+pip install "pipecat-ai[daily,deepgram,elevenlabs,openai,runner,silero,webrtc]" pipecat-mnemoverse python-dotenv
 python examples/voice-agent-memory.py
 ```
 
@@ -102,4 +104,4 @@ Tested with the `mnemoverse` Python SDK 0.5.2 and Pipecat v1.16.0 on Python 3.11
 
 ## License
 
-BSD 2-Clause, as Pipecat. See [LICENSE](LICENSE).
+BSD 2-Clause, as Pipecat. See [LICENSE](https://github.com/mnemoverse/pipecat-mnemoverse/blob/main/LICENSE).

@@ -42,6 +42,29 @@ MAX_QUERY = 5000
 MAX_CONTENT = 10000
 MAX_DOMAIN = 100
 
+# How long cleanup() waits for saves still running when the pipeline ends,
+# before it cancels them and closes the client.
+SAVE_DRAIN_SECS = 5.0
+
+
+# "<" and ">" become the single guillemets U+2039 and U+203A, as in langchain-mnemoverse.
+_ANGLE_BRACKETS = str.maketrans({"<": chr(0x2039), ">": chr(0x203A)})
+
+
+def _one_line(text: str) -> str:
+    """Memory text as the LLM sees it: one line, angle brackets replaced.
+
+    Memory text is written by other people and tools. Kept on one line, it
+    cannot start a line of its own that reads as another numbered memory.
+    """
+    return " ".join(text.split()).translate(_ANGLE_BRACKETS)
+
+
+def _reason(e: BaseException) -> str:
+    """Name an exception for the log, also when its message is empty."""
+    text = str(e)
+    return f"{type(e).__name__}: {text}" if text else type(e).__name__
+
 
 class MnemoverseMemoryService(FrameProcessor):
     """A memory service that recalls and saves memories with Mnemoverse.
@@ -63,7 +86,8 @@ class MnemoverseMemoryService(FrameProcessor):
                 moves on without memories. Recall sits on the path to the
                 LLM, so keep this short in voice pipelines.
             store_roles: Message roles to save. Defaults to the user's
-                messages only; add "assistant" to save the agent's replies.
+                messages only; add "assistant" to save the agent's replies,
+                or pass ``()`` to save nothing.
             system_prompt: Text that opens the message holding the memories.
             add_as_system_message: Insert the memories as an instruction
                 message ("developer" role) rather than a user message.
@@ -97,7 +121,9 @@ class MnemoverseMemoryService(FrameProcessor):
                 domain ``user:<user_id>`` unless ``domain`` is given.
             domain: The Mnemoverse domain to read and write, for example
                 ``user:42`` or ``project:support``. Takes precedence over
-                ``user_id``.
+                ``user_id``. The caller's messages are saved to it too, so in
+                a domain shared by several callers one caller's words reach
+                the others; use ``store_roles=()`` to only read it.
             params: Recall, storage and placement settings.
             client: An ``AsyncMnemoClient`` to use instead of creating one.
                 The caller keeps ownership and closes it; the service closes
@@ -130,7 +156,10 @@ class MnemoverseMemoryService(FrameProcessor):
         self.position = params.position
         self.last_query: str | None = None
         self._last_memory_text: str | None = None
+        # Every memory message this service has put into the context, by its exact text
+        self._memory_texts: set[str] = set()
         self._stored: set[tuple[str, str]] = set()
+        self._store_tasks: set[asyncio.Task] = set()
         logger.info(f"Initialized MnemoverseMemoryService with domain={domain!r}")
 
     async def get_memories(self, limit: int = 10) -> list[str]:
@@ -149,7 +178,7 @@ class MnemoverseMemoryService(FrameProcessor):
             feed = await self.client.recent(domain=self.domain, limit=limit)
             return [item.content for item in feed.items]
         except Exception as e:  # noqa: BLE001 - memory must never break a call
-            logger.error(f"Error listing memories from Mnemoverse: {e}")
+            logger.error(f"Error listing memories from Mnemoverse: {_reason(e)}")
             return []
 
     async def _retrieve_memories(self, query: str) -> list[str]:
@@ -173,7 +202,8 @@ class MnemoverseMemoryService(FrameProcessor):
             )
             # top_k is not a hard cap on the server (association expansion can
             # return more), so the context never gets more than top_k memories.
-            memories = [item.content for item in result.items if item.content][: self.top_k]
+            memories = [m for m in (_one_line(i.content or "") for i in result.items) if m]
+            memories = memories[: self.top_k]
             logger.debug(f"Recalled {len(memories)} memories from Mnemoverse")
             return memories
         except TimeoutError:
@@ -183,7 +213,7 @@ class MnemoverseMemoryService(FrameProcessor):
             )
             return []
         except Exception as e:  # noqa: BLE001 - the frame moves on without memories
-            logger.error(f"Error recalling memories from Mnemoverse: {e}")
+            logger.error(f"Error recalling memories from Mnemoverse: {_reason(e)}")
             return []
 
     async def _store_messages(self, messages: list[tuple[str, str]]):
@@ -205,7 +235,7 @@ class MnemoverseMemoryService(FrameProcessor):
                     metadata={"platform": "pipecat", "role": role},
                 )
             except Exception as e:  # noqa: BLE001 - a failed save must not stop the others
-                logger.error(f"Error saving a message to Mnemoverse: {e}")
+                logger.error(f"Error saving a message to Mnemoverse: {_reason(e)}")
 
     def _new_messages(self, context_messages: list) -> list[tuple[str, str]]:
         """Pick the messages to save: configured roles, text content, not saved yet."""
@@ -217,8 +247,8 @@ class MnemoverseMemoryService(FrameProcessor):
             content = message.get("content")
             if role not in self.store_roles or not isinstance(content, str) or not content.strip():
                 continue
-            # The recalled memories this service inserted are not a new message
-            if content.startswith(self.system_prompt):
+            # A memory message this service inserted is not a new message
+            if content in self._memory_texts:
                 continue
             key = (role, content)
             if key in self._stored:
@@ -264,6 +294,7 @@ class MnemoverseMemoryService(FrameProcessor):
             position = max(0, min(self.position, len(messages)))
             messages.insert(position, memory_message)
             self._last_memory_text = memory_text
+            self._memory_texts.add(memory_text)
             logger.debug(f"Added {len(memories)} memories to the context")
 
         context.set_messages(messages)
@@ -294,7 +325,11 @@ class MnemoverseMemoryService(FrameProcessor):
                     to_store = self._new_messages(context_messages)
                     await self._enhance_context_with_memories(context, latest_user_message)
                     if to_store:
-                        self.create_task(self._store_messages(to_store), name="mnemoverse_store")
+                        task = self.create_task(
+                            self._store_messages(to_store), name="mnemoverse_store"
+                        )
+                        self._store_tasks.add(task)
+                        task.add_done_callback(self._store_tasks.discard)
 
                 await self.push_frame(frame, direction)
             except Exception as e:  # noqa: BLE001 - report it and let the frame through
@@ -306,15 +341,33 @@ class MnemoverseMemoryService(FrameProcessor):
             await self.push_frame(frame, direction)
 
     async def cleanup(self):
-        """Close the Mnemoverse client when the pipeline shuts down.
+        """Finish the saves in flight and close the Mnemoverse client.
 
-        Only a client the service created itself is closed; one passed in as
-        ``client`` stays open for its owner.
+        Saves still running when the pipeline shuts down get up to
+        ``SAVE_DRAIN_SECS`` seconds to finish; the rest are cancelled with a
+        warning. Only a client the service created itself is then closed; one
+        passed in as ``client`` stays open for its owner.
         """
         await super().cleanup()
+        await self._finish_saves()
         if not self._owns_client:
             return
         try:
             await self.client.close()
         except Exception as e:  # noqa: BLE001 - shutdown goes on regardless
-            logger.debug(f"Error closing the Mnemoverse client: {e}")
+            logger.debug(f"Error closing the Mnemoverse client: {_reason(e)}")
+
+    async def _finish_saves(self):
+        """Wait for the background saves, then cancel those still running."""
+        pending = [task for task in self._store_tasks if not task.done()]
+        if not pending:
+            return
+        _, unfinished = await asyncio.wait(pending, timeout=SAVE_DRAIN_SECS)
+        if unfinished:
+            logger.warning(
+                f"{len(unfinished)} Mnemoverse save(s) did not finish within "
+                f"{SAVE_DRAIN_SECS}s of the pipeline ending and were cancelled; "
+                "their messages may not be saved"
+            )
+            for task in unfinished:
+                await self.cancel_task(task)
