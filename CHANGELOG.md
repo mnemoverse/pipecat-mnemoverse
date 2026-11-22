@@ -13,3 +13,4 @@ All notable changes to `pipecat-mnemoverse`.
 - Requires `mnemoverse>=0.5.2,<0.6.0` and `pipecat-ai>=1.15.0,<2`.
 - A client passed in as `client=` stays open when the pipeline ends; recall queries and saved messages are kept within the API's character limits; a domain over 100 characters is refused.
 - At most `top_k` memories reach the context, also when the server returns more.
+- The memory message the service inserts is recognised by its exact text, so a message that happens to open with `system_prompt`, or any message when `system_prompt` is empty, is still saved.

@@ -180,6 +180,25 @@ class TestStore(unittest.IsolatedAsyncioTestCase):
         await svc._enhance_context_with_memories(ctx, "hello")
         self.assertEqual(svc._new_messages(ctx.get_messages()), [("user", "hello")])
 
+    async def test_an_empty_system_prompt_does_not_stop_saving(self):
+        svc = _service(_FakeClient(), system_prompt="")
+        msgs = [{"role": "user", "content": "I prefer morning calls"}]
+        self.assertEqual(svc._new_messages(msgs), [("user", "I prefer morning calls")])
+
+    async def test_a_message_that_opens_with_the_system_prompt_is_saved(self):
+        svc = _service(_FakeClient(), system_prompt="Remember")
+        msgs = [{"role": "user", "content": "Remember that my daughter is allergic to nuts"}]
+        self.assertEqual(
+            svc._new_messages(msgs), [("user", "Remember that my daughter is allergic to nuts")]
+        )
+
+    async def test_injected_memories_are_not_stored_with_an_empty_system_prompt(self):
+        svc = _service(_FakeClient(["a fact"]), system_prompt="", add_as_system_message=False)
+        ctx = LLMContext(messages=[{"role": "user", "content": "hello"}])
+        await svc._enhance_context_with_memories(ctx, "hello")
+        self.assertEqual(len(ctx.get_messages()), 2)
+        self.assertEqual(svc._new_messages(ctx.get_messages()), [("user", "hello")])
+
     async def test_store_writes_to_the_domain(self):
         client = _FakeClient()
         svc = _service(client)

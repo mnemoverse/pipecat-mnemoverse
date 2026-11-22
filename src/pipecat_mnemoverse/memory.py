@@ -130,6 +130,8 @@ class MnemoverseMemoryService(FrameProcessor):
         self.position = params.position
         self.last_query: str | None = None
         self._last_memory_text: str | None = None
+        # Every memory message this service has put into the context, by its exact text
+        self._memory_texts: set[str] = set()
         self._stored: set[tuple[str, str]] = set()
         logger.info(f"Initialized MnemoverseMemoryService with domain={domain!r}")
 
@@ -217,8 +219,8 @@ class MnemoverseMemoryService(FrameProcessor):
             content = message.get("content")
             if role not in self.store_roles or not isinstance(content, str) or not content.strip():
                 continue
-            # The recalled memories this service inserted are not a new message
-            if content.startswith(self.system_prompt):
+            # A memory message this service inserted is not a new message
+            if content in self._memory_texts:
                 continue
             key = (role, content)
             if key in self._stored:
@@ -264,6 +266,7 @@ class MnemoverseMemoryService(FrameProcessor):
             position = max(0, min(self.position, len(messages)))
             messages.insert(position, memory_message)
             self._last_memory_text = memory_text
+            self._memory_texts.add(memory_text)
             logger.debug(f"Added {len(memories)} memories to the context")
 
         context.set_messages(messages)
