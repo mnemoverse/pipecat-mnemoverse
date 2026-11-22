@@ -73,7 +73,8 @@ class MnemoverseMemoryService(FrameProcessor):
                 moves on without memories. Recall sits on the path to the
                 LLM, so keep this short in voice pipelines.
             store_roles: Message roles to save. Defaults to the user's
-                messages only; add "assistant" to save the agent's replies.
+                messages only; add "assistant" to save the agent's replies,
+                or pass ``()`` to save nothing.
             system_prompt: Text that opens the message holding the memories.
             add_as_system_message: Insert the memories as an instruction
                 message ("developer" role) rather than a user message.
@@ -107,7 +108,9 @@ class MnemoverseMemoryService(FrameProcessor):
                 domain ``user:<user_id>`` unless ``domain`` is given.
             domain: The Mnemoverse domain to read and write, for example
                 ``user:42`` or ``project:support``. Takes precedence over
-                ``user_id``.
+                ``user_id``. The caller's messages are saved to it too, so in
+                a domain shared by several callers one caller's words reach
+                the others; use ``store_roles=()`` to only read it.
             params: Recall, storage and placement settings.
             client: An ``AsyncMnemoClient`` to use instead of creating one.
                 The caller keeps ownership and closes it; the service closes

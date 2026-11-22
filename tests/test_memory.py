@@ -294,6 +294,17 @@ class TestShutdown(unittest.IsolatedAsyncioTestCase):
         warnings = [m for level, m in self.log if level == "WARNING" and "Mnemoverse save" in m]
         self.assertEqual(len(warnings), 1)
 
+    async def test_empty_store_roles_recall_without_saving(self):
+        client = _FakeClient(["Shared answer: we open at nine"])
+        svc = MnemoverseMemoryService(
+            domain="project:support",
+            client=client,
+            params=MnemoverseMemoryService.InputParams(store_roles=()),
+        )
+        await self._one_turn(svc, "My card ends 4242")
+        self.assertEqual(len(client.reads), 1)
+        self.assertEqual(client.writes, [])
+
     async def test_a_failed_save_is_logged_with_its_type(self):
         client = _SlowWriteClient(write_delay=0, error=ConnectionError(""))
         await self._one_turn(_service(client), "Call me Ana")

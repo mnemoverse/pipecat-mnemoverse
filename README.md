@@ -66,11 +66,11 @@ Each new user message costs two requests: one recall before the reply and one wr
 |---|---|---|
 | `api_key` | `MNEMOVERSE_API_KEY` | Mnemoverse API key |
 | `user_id` | | The person the agent talks to; memories go to the domain `user:<user_id>` |
-| `domain` | | A Mnemoverse domain to use instead, for example `project:support` |
+| `domain` | | A Mnemoverse domain to use instead, for example `project:support`; the service saves messages to it as well as recalling from it |
 | `InputParams.top_k` | 5 | Memories to recall per user message |
 | `InputParams.min_relevance` | 0.3 | Minimum relevance of a recalled memory, 0 to 1 |
 | `InputParams.read_timeout_secs` | 1.0 | Longest wait for recall |
-| `InputParams.store_roles` | `("user",)` | Roles to save; add `"assistant"` to save the agent's replies |
+| `InputParams.store_roles` | `("user",)` | Roles to save; add `"assistant"` to save the agent's replies, or set `()` to save nothing |
 | `InputParams.system_prompt` | `"Relevant memories from earlier conversations:\n\n"` | Opening of the memory message |
 | `InputParams.add_as_system_message` | `True` | Insert memories as a "developer" message instead of a user message |
 | `InputParams.position` | 1 | Where in the context the memory message goes |
@@ -79,7 +79,7 @@ Each new user message costs two requests: one recall before the reply and one wr
 
 `get_memories(limit=10)` returns the newest memories of the domain, for example to build a greeting when a call connects.
 
-One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server. How Mnemoverse handles keys and data: [mnemoverse.com/docs/api/security](https://mnemoverse.com/docs/api/security).
+One API key reads and writes the whole memory of the account it was created in. Give each user their own domain, as `user_id` does, and keep the key on your server. The service saves the caller's messages to the same domain it recalls from: in a domain shared by several callers, such as `project:support`, one caller's words are recalled into other callers' conversations. To give callers shared knowledge they only read, set `store_roles=()`, which saves nothing. How Mnemoverse handles keys and data: [mnemoverse.com/docs/api/security](https://mnemoverse.com/docs/api/security).
 
 Pass your own `AsyncMnemoClient` as `client=` to share one connection pool between services; the service then leaves it open when the pipeline ends, and closing it is yours. A recall query longer than the API's 5,000 characters is cut to its last 5,000, and a message longer than 10,000 characters is saved as its first 10,000.
 
