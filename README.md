@@ -88,7 +88,7 @@ Pass your own `AsyncMnemoClient` as `client=` to share one connection pool betwe
 [`examples/voice-agent-memory.py`](examples/voice-agent-memory.py) is a voice agent that greets a returning caller with what it remembers. It needs `MNEMOVERSE_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY`:
 
 ```bash
-pip install "pipecat-ai[deepgram,elevenlabs,openai,silero,webrtc]" pipecat-mnemoverse python-dotenv
+pip install "pipecat-ai[daily,deepgram,elevenlabs,openai,runner,silero,webrtc]" pipecat-mnemoverse python-dotenv
 python examples/voice-agent-memory.py
 ```
 
