@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -61,4 +61,4 @@ known-first-party = ["pipecat_mnemoverse"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src"]
+files = ["src", "scripts"]
