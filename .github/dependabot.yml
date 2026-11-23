@@ -1,0 +1,8 @@
+# Every action in .github/workflows is pinned by commit, with its tag in a comment;
+# Dependabot proposes the newer commit and tag together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
