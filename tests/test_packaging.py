@@ -27,14 +27,20 @@ class TestWheel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         with tempfile.TemporaryDirectory() as out:
-            subprocess.run(
+            built = subprocess.run(
                 [sys.executable, "-m", "hatchling", "build", "--target", "wheel", "-d", out],
                 cwd=ROOT,
-                check=True,
+                check=False,
                 capture_output=True,
+                text=True,
             )
+            if built.returncode != 0:
+                raise AssertionError(
+                    f"hatchling build failed ({built.returncode}):\n{built.stderr}"
+                )
             wheels = list(Path(out).glob("*.whl"))
-            assert len(wheels) == 1, f"expected one wheel, got {wheels}"
+            if len(wheels) != 1:
+                raise AssertionError(f"expected one wheel, got {wheels}")
             with zipfile.ZipFile(wheels[0]) as wheel:
                 cls.names = wheel.namelist()
 
