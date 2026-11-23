@@ -1,10 +1,11 @@
 name: ci
 
-# The same gate release.yml runs before it builds: ruff, strict mypy and the
-# test suite, on every Python version pyproject.toml declares, plus one run
-# against the lowest versions the dependency ranges allow. The release
-# rehearsal runs the suite and the release gate on copies of the tree with the
-# CHANGELOG heading of __version__ dated, bare and missing.
+# The checks the test job of release.yml runs (there the build job runs beside
+# it, and publish waits for both): ruff, strict mypy and the test suite, here on
+# every Python version pyproject.toml declares, plus one run against the lowest
+# versions the dependency ranges allow. The release rehearsal runs the suite and
+# the release gate on copies of the tree with the CHANGELOG heading of
+# __version__ dated, bare and missing.
 
 on:
   pull_request:
@@ -115,6 +116,7 @@ jobs:
           # Plain output: a refusal expected here is not an error annotation.
           VERDICT=0
           GITHUB_ACTIONS= python scripts/release_gate.py check "v$VERSION" || VERDICT=$?
+          # 0 may publish, 1 refused, 2 the gate itself failed: only the exact code passes.
           if [ "$STATE" = dated ]; then EXPECTED=0; else EXPECTED=1; fi
           if [ "$VERDICT" -ne "$EXPECTED" ]; then
             echo "::error::with the heading $STATE the gate exited $VERDICT, expected $EXPECTED"

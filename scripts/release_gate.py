@@ -5,8 +5,9 @@
 #
 
 """The release gate: a tag vX.Y.Z may publish only when __version__ is X.Y.Z and CHANGELOG.md has
-the heading ``## [X.Y.Z] - YYYY-MM-DD``. release.yml runs it before anything is built; ci.yml runs
-it in the release rehearsal on every pull request. Nothing else decides whether a tag may publish.
+the heading ``## [X.Y.Z] - YYYY-MM-DD``. release.yml runs it in the test job, which the publish
+job waits for; ci.yml runs it in the release rehearsal on every pull request. Nothing else decides
+whether a tag may publish.
 
 Run from the repository root (Python 3.11+, standard library only)::
 
@@ -20,6 +21,10 @@ Run from the repository root (Python 3.11+, standard library only)::
 Between releases the heading of __version__ is legally in one of three states: dated (released, or
 the release PR merged), bare ``## [X.Y.Z]`` (the release PR in progress) or missing (__version__
 bumped before the heading was written). Only the dated one passes the gate.
+
+Exit 1 means a refusal and nothing else. When the gate cannot decide (no CHANGELOG.md, no
+version, a usage error, any other exception) it exits 2, so a crash is never mistaken for a
+refusal.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import os
 import re
 import sys
 import tomllib
+import traceback
 from datetime import date
 from pathlib import Path
 
@@ -49,7 +55,7 @@ def read_version(root: Path) -> str:
         r"""^__version__\s*=\s*["']([^"']+)["']""", path.read_text(encoding="utf-8"), re.M
     )
     if not match:
-        raise SystemExit(f"no __version__ = '...' line in {path}")
+        raise ValueError(f"no __version__ = '...' line in {path}")
     return match.group(1)
 
 
@@ -127,7 +133,7 @@ def stage(text: str, version: str, state: str, today: date) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main(argv: list[str] | None = None) -> int:
+def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="may this tag publish the tree?").add_argument("tag")
@@ -156,6 +162,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"tag {args.tag} may publish {version}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``run``, with every unexpected exception turned into exit 2: 1 stays a refusal only."""
+    try:
+        return run(argv)
+    except Exception as exc:  # noqa: BLE001 - any crash, reported and kept apart from a refusal
+        traceback.print_exc()
+        error = "::error::" if os.environ.get("GITHUB_ACTIONS") == "true" else "error: "
+        print(
+            f"{error}the release gate could not decide ({type(exc).__name__}: {exc})",
+            file=sys.stderr,
+        )
+        return 2
 
 
 if __name__ == "__main__":

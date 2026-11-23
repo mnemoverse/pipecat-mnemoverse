@@ -44,7 +44,7 @@ path = "src/pipecat_mnemoverse/__init__.py"
 packages = ["src/pipecat_mnemoverse"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+include = ["src", "scripts", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -15,8 +15,9 @@ name: release
 #
 # PyPI is irreversible: a version number can never be reused, even after the
 # file is deleted. Every check runs before the publish job starts. The job
-# that builds the published files installs nothing but pinned build and twine
-# and runs no test code; no checkout keeps the job token on disk.
+# that builds the published files pins build, twine and the build backend
+# (their own dependencies resolve at build time) and runs no test code; no
+# checkout keeps the job token on disk.
 
 on:
   push:
@@ -76,8 +77,10 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
-  # The bytes that get published come from here: a clean checkout and two
-  # pinned tools, before and without any dev dependency or test code.
+  # The bytes that get published come from here: a clean checkout, pinned
+  # build and twine and the pinned build backend (their own dependencies
+  # resolve at build time), in a job that installs no dev dependency and runs
+  # no test code.
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10

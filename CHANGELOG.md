@@ -7,6 +7,7 @@ All notable changes to `pipecat-mnemoverse`.
 ### Changed
 
 - Building the package (from the repository or the sdist) uses `hatchling==1.33.0` exactly instead of any `hatchling>=1.24`.
+- The sdist also ships `scripts/`, which `mypy` checks, so `mypy` passes in an unpacked sdist.
 
 ## [0.1.0] - 2026-11-21
 
